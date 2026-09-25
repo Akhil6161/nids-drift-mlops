@@ -1,642 +1,357 @@
 # 🛡️ NIDS Drift MLOps
 
-## Real-Time Network Intrusion Detection with Flow-Based Machine Learning, Concept-Drift Monitoring and Automated Model Lifecycle
+## Real-Time Network Intrusion Detection with Concept-Drift Monitoring and Automated Model Lifecycle
 
-An end-to-end **Network Intrusion Detection System (NIDS)** designed to detect malicious network traffic in real time while monitoring whether the traffic distribution is changing over time.
+**NIDS Drift MLOps** is an end-to-end Network Intrusion Detection System that combines **machine learning, live network traffic monitoring, flow-based feature extraction, prediction logging, concept-drift monitoring, and an MLOps model lifecycle**.
 
-The project combines:
+The system is trained using the **CICIDS2017** dataset and uses a **Random Forest classifier** to identify network traffic as either benign or potentially malicious.
 
-**CICIDS2017 → Data Processing → Random Forest → Live Packet Capture → Flow Reconstruction → Feature Extraction → Real-Time Prediction → Prediction Logging → Drift Detection → Candidate Retraining → Model Evaluation → Promotion Gate**
+Unlike a traditional NIDS that stops at model prediction, this project also monitors incoming prediction behaviour for distribution changes and provides an architecture for **candidate model retraining, evaluation, and controlled promotion**.
 
-The goal is not simply to train an intrusion-detection model.
+### Core Pipeline
 
-The goal is to build a system that recognizes an important problem with machine-learning systems deployed in changing environments:
-
-> **A model can perform well when it is trained, but its assumptions may become less reliable as the underlying traffic distribution changes.**
-
-This project therefore treats model monitoring and lifecycle management as first-class components of the NIDS rather than treating model training as the end of the system.
+```text
+Network Traffic
+      ↓
+Packet Capture
+      ↓
+Flow Reconstruction
+      ↓
+Feature Extraction
+      ↓
+Random Forest Prediction
+      ↓
+Prediction Logging
+      ↓
+Drift Detection
+      ↓
+Candidate Retraining
+      ↓
+Candidate Evaluation
+      ↓
+Promotion Gate
+      ↓
+Production Model
+```
 
 ---
 
-## 📌 Project Status
+# 🎯 Problem Statement
 
-> **Academic / student MLOps project — actively developed**
+Machine-learning models are trained using historical data, but network traffic is not static.
 
-The current repository contains the core components for:
+Applications, users, protocols, workloads, and attack patterns can change over time. As a result, the traffic observed after deployment may differ from the traffic used during training.
 
-* CICIDS2017 preprocessing
-* Binary intrusion classification
-* Random Forest training
-* Live packet capture with Scapy
-* Bidirectional network-flow reconstruction
-* 77-feature live feature extraction
+A traditional ML-based NIDS generally follows:
+
+```text
+Dataset → Training → Model → Prediction
+```
+
+This project extends that lifecycle:
+
+```text
+Training
+   ↓
+Deployment
+   ↓
+Prediction
+   ↓
+Monitoring
+   ↓
+Drift Detection
+   ↓
+Candidate Retraining
+   ↓
+Evaluation
+   ↓
+Promotion / Rejection
+```
+
+The objective is to make the model **observable and maintainable after deployment**, rather than treating training as the final step.
+
+---
+
+# 🚀 Key Features
+
+### Machine Learning
+
+* Random Forest intrusion detection model
+* Binary classification
+* CICIDS2017 training data
+* 77 network-flow features
+* Class-balanced training
+* Train/test evaluation
+* Joblib model serialization
+
+### Live Network Monitoring
+
+* Packet capture using Scapy
+* TCP/UDP traffic handling
+* Bidirectional flow reconstruction
+* Flow-level feature extraction
 * Real-time prediction
-* Attack-probability logging
-* PSI-based drift detection
-* Continuous drift monitoring
-* Streamlit monitoring dashboard
-* Pipeline orchestration and audit logging
+* Attack probability calculation
+* Prediction logging
 
-The repository also contains orchestration logic for candidate retraining and model promotion.
+### Drift Monitoring
 
-The retraining and promotion stages are currently being integrated into the complete runnable pipeline and should therefore be treated as **MLOps architecture / work in progress rather than a fully production-hardened deployment system**.
+* Population Stability Index (PSI)
+* Reference vs current traffic windows
+* Drift severity classification
+* Continuous monitoring
+* Drift result logging
 
----
+### MLOps
 
-# 1. 🎯 Problem Statement
+* Drift-triggered pipeline architecture
+* Candidate model retraining
+* Candidate evaluation
+* Promotion gate
+* Production-model protection
+* Pipeline audit logging
 
-Traditional machine-learning intrusion detection systems usually follow a relatively simple lifecycle:
+### Dashboard
 
-```text
-Dataset
-   ↓
-Train Model
-   ↓
-Evaluate Model
-   ↓
-Deploy Model
-   ↓
-Predict
-```
-
-The problem is that network traffic is not static.
-
-Over time:
-
-* normal traffic patterns change
-* applications change
-* network usage changes
-* protocols and services evolve
-* attack behaviour changes
-* new attack patterns can appear
-* the distribution of model inputs can shift
-
-A model trained on historical traffic therefore operates under an assumption:
-
-```text
-Future traffic ≈ Training traffic
-```
-
-When that assumption becomes weaker, the model can become stale.
-
-This project introduces a monitoring loop:
-
-```text
-                    ┌─────────────────────┐
-                    │ Historical Dataset  │
-                    └──────────┬──────────┘
-                               ↓
-                         Model Training
-                               ↓
-                     Production Model
-                               ↓
-                    ┌─────────────────┐
-                    │ Live Network    │
-                    │ Traffic         │
-                    └────────┬────────┘
-                             ↓
-                     Flow Construction
-                             ↓
-                      Feature Extraction
-                             ↓
-                       ML Prediction
-                             ↓
-                     Prediction Logging
-                             ↓
-                      Drift Monitoring
-                             ↓
-                     Significant Drift?
-                       /            \
-                     NO              YES
-                     ↓                 ↓
-             Keep Model        Candidate Retraining
-                                     ↓
-                              Candidate Evaluation
-                                     ↓
-                                Promotion Gate
-                                /           \
-                              PASS           FAIL
-                               ↓               ↓
-                       Update Model       Keep Existing
-```
-
-This turns a static ML classifier into an **ML monitoring and lifecycle pipeline**.
+* Prediction statistics
+* Attack rate
+* Attack probability
+* Recent predictions
+* Drift status
+* Significant drift features
+* Pipeline status
+* Retraining/promotion information
 
 ---
 
-# 2. 🚀 What This Project Actually Does
-
-The system has two major operating modes.
-
-### Mode 1 — Offline ML development
-
-The CICIDS2017 dataset is:
-
-1. Loaded
-2. Cleaned
-3. Converted from multi-class labels into binary labels
-4. Stored as Parquet
-5. Split into training and testing data
-6. Used to train a Random Forest classifier
-7. Evaluated using classification metrics
-8. Serialized using Joblib
-
-### Mode 2 — Live NIDS monitoring
-
-The system:
-
-1. Captures packets using Scapy
-2. Identifies IP/TCP/UDP traffic
-3. Groups packets into bidirectional flows
-4. Accumulates flow statistics
-5. Extracts the same general feature schema used during training
-6. Runs the trained model
-7. Calculates attack probability
-8. Logs predictions
-9. Monitors prediction behaviour
-10. Runs drift detection when enough observations are available
-
----
-
-# 3. 🧠 Why Flow-Based Detection?
-
-A raw packet is often not enough information to characterize network behaviour.
-
-Consider:
+# 🏗️ System Architecture
 
 ```text
-Packet 1
-Packet 2
-Packet 3
-Packet 4
-Packet 5
-...
-```
-
-A NIDS is usually interested in characteristics of the **communication flow**, such as:
-
-* how many packets were sent
-* how many bytes were transferred
-* packet-size statistics
-* packet timing
-* forward/backward traffic ratios
-* TCP flags
-* header sizes
-* initial TCP window sizes
-* inter-arrival times
-* flow duration
-
-Therefore this project reconstructs traffic into flows.
-
-A flow is identified using information similar to a 5-tuple:
-
-```text
-Source IP
-Destination IP
-Source Port
-Destination Port
-Protocol
-```
-
-For example:
-
-```text
-192.168.1.10 : 52144
-        ↓
-    TCP / 443
-        ↓
-142.250.xxx.xxx : 443
-```
-
-Packets belonging to the same communication are accumulated into a `Flow` object.
-
-The live flow builder then converts that accumulated state into model features.
-
----
-
-# 4. 🔄 End-to-End System Architecture
-
-```text
-                         ┌─────────────────────────┐
-                         │     CICIDS2017          │
-                         │ Historical Network Data │
-                         └────────────┬────────────┘
-                                      │
-                                      ▼
-                         ┌─────────────────────────┐
-                         │ Data Loader             │
-                         │                         │
-                         │ Load 8 Parquet files   │
-                         └────────────┬────────────┘
-                                      │
-                                      ▼
-                         ┌─────────────────────────┐
-                         │ Preprocessor            │
-                         │                         │
-                         │ • Clean columns         │
-                         │ • Remove NaN/Inf        │
-                         │ • Remove duplicates     │
-                         │ • Create binary target  │
-                         └────────────┬────────────┘
-                                      │
-                                      ▼
-                         ┌─────────────────────────┐
-                         │ Random Forest Training  │
-                         │                         │
-                         │ 77 numerical features  │
-                         │ Binary classification  │
-                         └────────────┬────────────┘
-                                      │
-                                      ▼
-                         ┌─────────────────────────┐
-                         │ Production Model        │
-                         │ nids_random_forest      │
-                         │ .joblib                 │
-                         └────────────┬────────────┘
-                                      │
-                                      │
-              ┌───────────────────────┴────────────────────────┐
-              │                                                │
-              ▼                                                ▼
-   ┌──────────────────────┐                         ┌──────────────────────┐
-   │ Live Network Traffic │                         │ Controlled Dataset   │
-   │                      │                         │ Demonstration        │
-   └──────────┬───────────┘                         └──────────┬───────────┘
-              │                                                │
-              ▼                                                ▼
-   ┌──────────────────────┐                         ┌──────────────────────┐
-   │ Scapy Packet Capture │                         │ Sample Replay        │
-   └──────────┬───────────┘                         └──────────┬───────────┘
-              │                                                │
-              └──────────────────────┬─────────────────────────┘
-                                     ▼
-                          ┌─────────────────────────┐
-                          │ Flow Reconstruction     │
-                          │                         │
-                          │ Forward / Backward      │
-                          │ packets                 │
-                          └────────────┬────────────┘
-                                       │
-                                       ▼
-                          ┌─────────────────────────┐
-                          │ Feature Extraction      │
-                          │                         │
-                          │ 77 CICIDS-style fields │
-                          └────────────┬────────────┘
-                                       │
-                                       ▼
-                          ┌─────────────────────────┐
-                          │ Random Forest Inference │
-                          └────────────┬────────────┘
-                                       │
-                          ┌────────────┴────────────┐
-                          ▼                         ▼
-                 ┌────────────────┐       ┌──────────────────┐
-                 │ BENIGN / ATTACK│       │ Attack Probability│
-                 └────────┬───────┘       └─────────┬────────┘
-                          │                         │
-                          └────────────┬────────────┘
-                                       ▼
-                          ┌─────────────────────────┐
-                          │ Prediction Log          │
-                          │ CSV                     │
-                          └────────────┬────────────┘
-                                       │
-                                       ▼
-                          ┌─────────────────────────┐
-                          │ Drift Detection         │
-                          │                         │
-                          │ Reference vs Current    │
-                          │ PSI                     │
-                          └────────────┬────────────┘
-                                       │
-                                       ▼
-                              ┌──────────────────┐
-                              │ Drift Severity   │
-                              └────────┬─────────┘
-                                       │
-                        ┌──────────────┼──────────────┐
-                        ▼              ▼              ▼
-                   NO_DRIFT     MODERATE_DRIFT   SIGNIFICANT_DRIFT
-                        │              │              │
-                        │              │              ▼
-                        │              │       Candidate Retraining
-                        │              │              │
-                        │              │              ▼
-                        │              │       Candidate Evaluation
-                        │              │              │
-                        │              │              ▼
-                        │              │        Promotion Gate
-                        │              │          /       \
-                        │              │        PASS       FAIL
-                        │              │         │          │
-                        ▼              ▼         ▼          ▼
-                  Keep Existing Production Model
+                         ┌──────────────────────┐
+                         │     CICIDS2017       │
+                         │    Training Data     │
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │ Data Preprocessing   │
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │   Random Forest      │
+                         │      Training        │
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │   Production Model   │
+                         └──────────┬───────────┘
+                                    │
+                                    │
+             ┌──────────────────────┴─────────────────────┐
+             │                                            │
+             ▼                                            ▼
+    ┌──────────────────┐                         ┌──────────────────┐
+    │  Live Network    │                         │ Controlled Data  │
+    │     Traffic      │                         │   Demonstration   │
+    └────────┬─────────┘                         └────────┬─────────┘
+             │                                            │
+             └──────────────────┬─────────────────────────┘
+                                ▼
+                     ┌──────────────────────┐
+                     │ Flow Reconstruction  │
+                     └──────────┬───────────┘
+                                ▼
+                     ┌──────────────────────┐
+                     │ Feature Extraction   │
+                     └──────────┬───────────┘
+                                ▼
+                     ┌──────────────────────┐
+                     │ Model Prediction     │
+                     └──────────┬───────────┘
+                                │
+                     ┌──────────┴──────────┐
+                     ▼                     ▼
+              ┌─────────────┐       ┌──────────────┐
+              │ Prediction  │       │    Attack    │
+              │   Logging   │       │ Probability  │
+              └──────┬──────┘       └──────┬───────┘
+                     │                     │
+                     └──────────┬──────────┘
+                                ▼
+                     ┌──────────────────────┐
+                     │   Prediction Log     │
+                     └──────────┬───────────┘
+                                ▼
+                     ┌──────────────────────┐
+                     │   Drift Detection    │
+                     │        PSI            │
+                     └──────────┬───────────┘
+                                │
+                        Significant Drift?
+                         ┌──────┴──────┐
+                        NO             YES
+                        │               │
+                        ▼               ▼
+                 Keep Current     Candidate Model
+                    Model            Retraining
+                                        │
+                                        ▼
+                                  Evaluation
+                                        │
+                                        ▼
+                                 Promotion Gate
+                                  /          \
+                               PASS          FAIL
+                                │              │
+                                ▼              ▼
+                           New Model      Existing Model
+                           Promoted         Retained
 ```
 
 ---
 
-# 5. 📊 Dataset
+# 📊 Dataset
 
-This project uses the **CICIDS2017** intrusion-detection dataset.
+The project uses the **CICIDS2017** intrusion-detection dataset.
 
-The repository expects the processed source data to be divided into Parquet files representing different traffic categories/days.
-
-The loader currently expects these files:
-
-```text
-Benign-Monday-no-metadata.parquet
-Bruteforce-Tuesday-no-metadata.parquet
-DoS-Wednesday-no-metadata.parquet
-Infiltration-Thursday-no-metadata.parquet
-WebAttacks-Thursday-no-metadata.parquet
-DDoS-Friday-no-metadata.parquet
-Portscan-Friday-no-metadata.parquet
-Botnet-Friday-no-metadata.parquet
-```
-
-The project intentionally does not commit the full raw dataset because of its size.
-
----
-
-# 6. 🏷️ Binary Classification
-
-CICIDS2017 contains multiple traffic/attack categories.
-
-For this project they are converted into a binary target:
+The original dataset contains multiple traffic and attack categories. For this project, the labels are converted into a binary classification problem:
 
 | Target | Meaning |
 | -----: | ------- |
-|    `0` | BENIGN  |
-|    `1` | ATTACK  |
+|    `0` | Benign  |
+|    `1` | Attack  |
 
-The transformation is:
+Attack categories represented in the source dataset include:
 
-```python
-if Label == "Benign":
-    Target = 0
-else:
-    Target = 1
-```
+* DoS
+* DDoS
+* PortScan
+* Brute Force
+* Web Attacks
+* Infiltration
+* Botnet
+* Heartbleed
 
-This means categories such as:
+The raw dataset is not included in the repository because of its size.
 
-```text
-DoS
-DDoS
-PortScan
-Brute Force
-Web Attacks
-Infiltration
-Botnet
-```
-
-are treated as the broader class:
-
-```text
-ATTACK
-```
-
-The objective is therefore **binary intrusion detection**, not attack-family classification.
+The processed training data contains **77 model features** and one binary target.
 
 ---
 
-# 7. 🧹 Data Preprocessing
+# 🧹 Data Preprocessing
 
-The preprocessing stage performs several operations.
-
-### 7.1 Column-name normalization
-
-Whitespace is removed and spaces are converted to underscores.
+The preprocessing pipeline performs the following operations:
 
 ```text
-"Flow Duration"
+Raw CICIDS2017 Data
+        ↓
+Column Normalization
+        ↓
+Remove Invalid Values
+        ↓
+Handle Missing Values
+        ↓
+Remove Duplicates
+        ↓
+Convert Labels to Binary
+        ↓
+Processed Parquet Dataset
 ```
 
-becomes:
+Column names are normalized so that fields such as:
 
 ```text
-"Flow_Duration"
+Flow Duration
 ```
 
-### 7.2 Infinite-value handling
-
-Network datasets frequently contain infinite values when a rate or division operation has an invalid denominator.
-
-The pipeline converts:
+become:
 
 ```text
-+∞
--∞
+Flow_Duration
 ```
 
-into missing values.
-
-### 7.3 Missing-value removal
-
-Rows containing missing values are removed.
-
-### 7.4 Duplicate removal
-
-Duplicate network-flow records are removed.
-
-### 7.5 Binary target creation
-
-The original categorical `Label` is converted into:
+Infinite and invalid values are removed, missing rows are handled, duplicate records are removed, and the original attack labels are converted into:
 
 ```text
-Target = 0 → Benign
-Target = 1 → Attack
+Benign → 0
+Attack → 1
 ```
 
-The cleaned dataset is saved as:
+The processed dataset is stored as:
 
 ```text
 data/processed/cicids2017_processed.parquet
 ```
 
-The implementation follows this preprocessing flow directly.
-
 ---
 
-# 8. 🤖 Machine Learning Model
+# 🤖 Machine Learning Model
 
-The baseline classifier is:
+The baseline model is a:
 
 ```text
-RandomForestClassifier
+Random Forest Classifier
 ```
 
-Current training configuration:
+with the current configuration:
 
 ```python
 RandomForestClassifier(
     n_estimators=100,
     random_state=42,
     n_jobs=-1,
-    class_weight="balanced",
+    class_weight="balanced"
 )
 ```
 
 ### Why Random Forest?
 
-Random Forest is a practical baseline for this problem because network-flow data is:
+Network-flow data is structured tabular data containing many statistical and traffic-related features.
 
-* tabular
-* heterogeneous
-* nonlinear
-* potentially highly imbalanced
+Random Forest is useful for this project because it:
 
-The model can capture nonlinear relationships between traffic characteristics without requiring extensive feature scaling.
+* handles nonlinear relationships
+* works well with tabular features
+* does not require feature scaling
+* can handle many input features
+* supports class weighting
+* provides a strong baseline for experimentation
 
-The project also uses:
+The dataset is split using an **80/20 stratified train-test split**.
 
-```python
-class_weight="balanced"
-```
-
-to compensate for class imbalance.
-
----
-
-# 9. 🧪 Model Training
-
-The training pipeline:
-
-```text
-Processed Parquet
-       ↓
-Separate X / y
-       ↓
-Keep numerical features
-       ↓
-Replace invalid values
-       ↓
-80/20 train-test split
-       ↓
-Stratification
-       ↓
-Random Forest
-       ↓
-Evaluation
-       ↓
-Joblib model artifact
-```
-
-The split is:
-
-```text
-80% Training
-20% Testing
-```
-
-with:
-
-```python
-stratify=y
-random_state=42
-```
-
-The model is saved as:
+The resulting model is serialized using Joblib:
 
 ```text
 models/nids_random_forest.joblib
 ```
 
-The current training implementation reports accuracy, classification report and confusion matrix.
-
 ---
 
-# 10. 📐 Feature Engineering
+# 🌐 Live Network Traffic Detection
 
-The live NIDS attempts to recreate the same flow-level representation expected by the trained model.
+The live NIDS uses **Scapy** to capture packets from a configured network interface.
 
-The feature space contains **77 model features**.
-
-These include categories such as:
-
-### Flow information
-
-* Flow duration
-* Total forward packets
-* Total backward packets
-* Forward packet bytes
-* Backward packet bytes
-
-### Packet statistics
-
-* minimum packet length
-* maximum packet length
-* mean packet length
-* standard deviation
-* variance
-
-### Inter-arrival time
-
-* flow IAT mean
-* flow IAT standard deviation
-* flow IAT minimum
-* flow IAT maximum
-* forward IAT statistics
-* backward IAT statistics
-
-### Traffic rates
-
-* bytes/second
-* packets/second
-* forward packets/second
-* backward packets/second
-
-### TCP characteristics
-
-* FIN
-* SYN
-* RST
-* PSH
-* ACK
-* URG
-* ECE
-* CWE
-
-### Header information
-
-* forward header length
-* backward header length
-
-### Window information
-
-* initial forward TCP window
-* initial backward TCP window
-
-The flow builder computes these statistics from packets accumulated in each bidirectional flow.
-
----
-
-# 11. 🌐 Live Packet Capture
-
-Live monitoring is implemented using **Scapy**.
-
-The capture process:
+The packet-processing pipeline is:
 
 ```text
-Network Interface
-       ↓
-Scapy sniff()
-       ↓
-IP / IPv6 packet
-       ↓
-TCP / UDP information
-       ↓
-5-tuple flow matching
-       ↓
-Flow object
-       ↓
-Feature extraction
-       ↓
-Prediction
+Packet
+  ↓
+IP / IPv6
+  ↓
+TCP / UDP
+  ↓
+Flow Identification
+  ↓
+Flow Statistics
+  ↓
+Feature Extraction
+  ↓
+Model Prediction
 ```
 
-The live implementation extracts:
+The system extracts information such as:
 
 * source IP
 * destination IP
@@ -646,26 +361,26 @@ The live implementation extracts:
 * packet length
 * TCP flags
 * TCP window size
-* header length
-* packet timestamp
-
-and uses these values to build the flow representation.
+* header information
+* timestamps
 
 ---
 
-# 12. 🔁 Bidirectional Flow Reconstruction
+# 🔄 Bidirectional Flow Reconstruction
 
-For each packet, the system creates two possible flow keys:
+Instead of treating every packet independently, packets are grouped into flows.
+
+A flow is identified using information similar to:
 
 ```text
-Forward:
-(src_ip, src_port, dst_ip, dst_port, protocol)
-
-Backward:
-(dst_ip, dst_port, src_ip, src_port, protocol)
+Source IP
+Destination IP
+Source Port
+Destination Port
+Protocol
 ```
 
-This allows a response packet to be associated with the same flow.
+Both communication directions are associated with the same flow.
 
 For example:
 
@@ -681,84 +396,72 @@ Server → Client
 10.0.0.5:443 → 192.168.1.10:50000
 ```
 
-are treated as the same communication flow.
+belong to the same communication flow.
 
-This matters because many intrusion-detection features depend on comparing the two traffic directions.
-
----
-
-# 13. ⚡ Rolling Real-Time Prediction
-
-The system does not wait for a flow to finish.
-
-Instead:
-
-```text
-First 5 packets
-       ↓
-Prediction
-       ↓
-Next 5 packets
-       ↓
-Prediction
-       ↓
-Next 5 packets
-       ↓
-Prediction
-       ↓
-...
-```
-
-Current configuration:
-
-```python
-PREDICT_AFTER_PACKETS = 5
-PREDICT_EVERY_PACKETS = 5
-```
-
-Therefore, once a flow reaches five packets, the system begins generating rolling predictions every five additional packets.
-
-This is useful for long-lived flows because the system can update its assessment while communication is still occurring.
+This is important because many network-flow features depend on comparing forward and backward traffic.
 
 ---
 
-# 14. 🔮 Prediction Output
+# 📐 Feature Extraction
 
-For every prediction the model produces:
+The live flow builder attempts to reproduce the feature representation used by the CICIDS2017 model.
+
+The feature set includes categories such as:
+
+* Flow duration
+* Forward/backward packet counts
+* Forward/backward byte counts
+* Packet length statistics
+* Packet inter-arrival times
+* Packet rates
+* Header lengths
+* TCP flags
+* TCP window sizes
+* Forward/backward traffic statistics
+
+The model expects **77 numerical features**.
+
+Maintaining feature consistency between:
 
 ```text
-prediction
-label
-attack_probability
+Offline Training
+        ↕
+Live Inference
+```
+
+is critical because the model must receive features with compatible meaning and ordering.
+
+---
+
+# ⚡ Real-Time Prediction
+
+The live system performs rolling predictions as flows accumulate packets.
+
+The current configuration starts prediction after a minimum number of packets and continues predicting periodically as additional packets arrive.
+
+Each prediction contains information such as:
+
+```text
+Timestamp
+Source / Destination
+Protocol
+Packet Count
+Byte Count
+Prediction
+Label
+Attack Probability
+Traffic Source
 ```
 
 Example:
 
 ```json
 {
-    "prediction": 1,
-    "label": "ATTACK",
-    "attack_probability": 0.94
+  "prediction": 1,
+  "label": "ATTACK",
+  "attack_probability": 0.94
 }
 ```
-
-or:
-
-```json
-{
-    "prediction": 0,
-    "label": "BENIGN",
-    "attack_probability": 0.03
-}
-```
-
-The predictor also reorders the feature DataFrame according to the model's original training feature order before inference.
-
-This is important because a machine-learning model expects the same feature semantics and column ordering it saw during training.
-
----
-
-# 15. 📝 Prediction Logging
 
 Predictions are stored in:
 
@@ -766,105 +469,37 @@ Predictions are stored in:
 logs/nids_predictions.csv
 ```
 
-The log contains fields including:
-
-```text
-timestamp
-src_ip
-src_port
-dst_ip
-dst_port
-protocol
-packets
-bytes
-prediction
-label
-attack_probability
-source
-```
-
-Example:
-
-```text
-timestamp,src_ip,src_port,dst_ip,dst_port,protocol,packets,bytes,prediction,label,attack_probability,source
-```
-
-This prediction log serves as the bridge between:
-
-```text
-Online inference
-        ↓
-Monitoring
-        ↓
-Drift detection
-```
-
-The current implementation appends predictions to CSV rather than using a database.
+This log becomes the input to the monitoring and drift-detection pipeline.
 
 ---
 
-# 16. 📉 What Is Concept Drift?
+# 📉 Concept Drift Monitoring
 
-Concept drift occurs when the statistical relationship between incoming data and the target behaviour changes over time.
+Network behaviour can change after deployment.
 
-In simple terms:
-
-```text
-Training Environment
-       ↓
-Model learns pattern A
-       ↓
-Production environment changes
-       ↓
-Traffic behaves differently
-       ↓
-Model assumptions become stale
-```
-
-For an NIDS, this matters because network behaviour is not stationary.
-
-However, an important distinction should be made:
-
-### Data drift
-
-The input distribution changes.
+For example:
 
 ```text
-P(X) changes
+Normal Traffic
+      ↓
+New Application / Usage Pattern
+      ↓
+Different Traffic Distribution
+      ↓
+Distribution Shift
 ```
 
-### Concept drift
-
-The relationship between input and target changes.
-
-```text
-P(Y | X) changes
-```
-
-The current project primarily monitors **distributional changes in selected logged prediction variables**, so it should be described precisely as **PSI-based drift monitoring**, rather than claiming that it directly proves model-performance degradation or ground-truth concept drift.
-
-That distinction is important for a technically accurate MLOps project.
-
----
-
-# 17. 📊 Current Drift Detection
+The project monitors this change using **Population Stability Index (PSI)**.
 
 The current detector compares:
 
 ```text
 Reference Window
         vs
-Current Window
+Recent Window
 ```
 
-The configured windows are:
-
-```text
-Reference = first 1000 predictions
-Current   = latest 100 predictions
-```
-
-The monitored variables are:
+and monitors variables including:
 
 ```text
 packets
@@ -872,324 +507,212 @@ bytes
 attack_probability
 ```
 
-The current implementation calculates **Population Stability Index (PSI)** for these variables.
-
 ---
 
-# 18. 📐 Population Stability Index
+# 📊 PSI Drift Classification
 
-PSI measures how much a distribution has shifted between a reference population and a current population.
+The current implementation uses:
+
+|            PSI | Classification      |
+| -------------: | ------------------- |
+|       `< 0.10` | `NO_DRIFT`          |
+| `0.10 – <0.25` | `MODERATE_DRIFT`    |
+|       `≥ 0.25` | `SIGNIFICANT_DRIFT` |
 
 Conceptually:
 
 ```text
 Reference Distribution
-        ↓
-Expected behaviour
-
-Current Distribution
-        ↓
-Observed behaviour
-
-Compare both
-        ↓
-PSI
+          │
+          │
+          ▼
+     ┌──────────┐
+     │   PSI    │
+     └────┬─────┘
+          │
+          ▼
+    Drift Severity
 ```
 
-The implementation creates bins based on the reference distribution and compares the proportions in each bin.
+### Important distinction
 
-The mathematical form is:
+PSI detects a **distribution shift**.
+
+It does not directly prove that:
 
 ```text
-PSI = Σ (Current% - Reference%)
-             ×
-        ln(Current% / Reference%)
+Model accuracy has decreased
 ```
 
-A larger PSI indicates a larger distributional shift.
+because that would require reliable ground-truth labels or another evaluation mechanism.
 
-The project currently interprets PSI as:
-
-|            PSI | Status              |
-| -------------: | ------------------- |
-|       `< 0.10` | `NO_DRIFT`          |
-| `0.10 – <0.25` | `MODERATE_DRIFT`    |
-|      `>= 0.25` | `SIGNIFICANT_DRIFT` |
-
-These thresholds are implemented directly in the detector.
+Therefore, the project treats drift as a **signal to investigate/retrain**, rather than proof that the production model has failed.
 
 ---
 
-# 19. ⚠️ PSI Is Not Proof of Model Failure
+# 🔁 Automated MLOps Workflow
 
-This is an important design principle.
+The MLOps component is designed around the idea that detecting drift should **not automatically overwrite the production model**.
 
-If:
-
-```text
-PSI > threshold
-```
-
-it means:
-
-> The monitored distribution has shifted.
-
-It does **not automatically mean**:
-
-> The model is now inaccurate.
-
-To prove model degradation, ground-truth labels or another reliable evaluation mechanism would be required.
-
-Therefore the intended lifecycle is:
-
-```text
-Distribution Shift
-        ↓
-Monitoring Signal
-        ↓
-Candidate Retraining
-        ↓
-Candidate Evaluation
-        ↓
-Promotion Decision
-```
-
-rather than:
-
-```text
-Drift = Model is Wrong
-```
-
-This separation is important in a real MLOps system.
-
----
-
-# 20. 🔄 Continuous Drift Monitoring
-
-The project also includes a continuous monitoring process.
-
-The monitor:
-
-1. Checks whether the prediction log exists
-2. Reads the current prediction count
-3. Waits until enough predictions are available
-4. Detects new predictions
-5. Runs drift detection
-6. Writes updated drift results
-7. Repeats after a configured interval
-
-Current polling interval:
-
-```text
-30 seconds
-```
-
-The monitor therefore provides a simple continuous monitoring loop around the drift detector.
-
----
-
-# 21. 🔁 MLOps Retraining Architecture
-
-The intended automated lifecycle is:
+Instead:
 
 ```text
 Prediction Log
       ↓
 Drift Detection
       ↓
-Significant Drift?
-      │
-      ├── NO
-      │    ↓
-      │  Keep Production Model
-      │
-      └── YES
-           ↓
-      Candidate Retraining
-           ↓
-      Candidate Evaluation
-           ↓
-      Promotion Gate
-           │
-        ┌──┴──┐
-        ↓     ↓
-      PASS   FAIL
-        ↓     ↓
-   Promote   Reject
-        ↓     ↓
- Production Existing
-   Model     Model
-```
-
-The orchestration layer in `src/pipeline/run.py` follows this intended state machine:
-
-1. Validate prediction log
-2. Run drift detection
-3. Identify significant features
-4. Trigger candidate retraining
-5. Run model promotion
-6. Record pipeline status
-7. Record promotion status
-8. Save audit information
-
-The orchestration code explicitly invokes `src.models.retrain` after significant drift and `src.models.promote` afterward.
-
-### Current implementation note
-
-The repository should not yet be presented as a completely finished autonomous retraining system until the referenced retraining and promotion modules are present, tested and executable in the repository.
-
----
-
-# 22. 🧪 Why Use a Candidate Model?
-
-Automatically replacing the production model after detecting drift would be dangerous.
-
-Imagine:
-
-```text
-Drift detected
+Significant Drift
       ↓
-Automatically retrain
+Candidate Retraining
       ↓
-Automatically replace model
+Candidate Evaluation
+      ↓
+Promotion Gate
 ```
 
-The new model could actually be worse.
+The candidate model is evaluated before it can replace the production model.
 
-Instead:
+### If the candidate passes
 
 ```text
-Production Model
-      │
-      │ remains active
-      │
-      └───────┐
-              ↓
-       Candidate Model
-              ↓
-          Evaluate
-              ↓
-       Promotion Gate
-          /       \
-       PASS       FAIL
-        ↓           ↓
-   Promote       Reject
+Candidate
+   ↓
+Promoted
+   ↓
+Production Model Updated
 ```
 
-This creates a safety boundary between:
+### If the candidate fails
 
 ```text
-MODEL TRAINING
+Candidate
+   ↓
+Rejected
+   ↓
+Production Model Unchanged
 ```
 
-and:
-
-```text
-MODEL DEPLOYMENT
-```
-
-That separation is one of the most important ideas in the project's MLOps architecture.
+This protects the currently deployed model from an unsuccessful automatic retraining cycle.
 
 ---
 
-# 23. 📋 Pipeline Audit Logging
+# 📋 Pipeline Logging
 
-The pipeline records operational information such as:
+The pipeline records information such as:
 
-```text
-timestamp
-pipeline_status
-drift_detected
-significant_features
-moderate_features
-retraining_triggered
-retraining_status
-promotion_triggered
-promotion_status
-duration_seconds
-```
+* pipeline status
+* drift status
+* significant features
+* retraining status
+* promotion status
+* execution time
 
-This allows the pipeline to answer questions such as:
-
-* When was drift detected?
-* Which variables were affected?
-* Was retraining triggered?
-* Did retraining complete?
-* Was promotion attempted?
-* What was the final pipeline status?
-* How long did the pipeline take?
-
-This is stored through the pipeline audit mechanism in:
+This provides an audit trail for understanding:
 
 ```text
-logs/pipeline_log.json
+When did drift occur?
+What changed?
+Was retraining triggered?
+Was a candidate produced?
+Was it promoted?
 ```
-
-The orchestration implementation explicitly records these states.
 
 ---
 
-# 24. 📊 Dashboard
+# 📊 Streamlit Dashboard
 
-The Streamlit dashboard provides a monitoring layer over the pipeline.
+The project includes a Streamlit dashboard for monitoring the NIDS.
 
-Typical operational information includes:
+The dashboard provides visibility into:
 
-### Prediction metrics
+### Traffic
 
-```text
-Total predictions
-Benign predictions
-Attack predictions
-Attack rate
-Average attack probability
-Maximum attack probability
+* Total predictions
+* Benign predictions
+* Attack predictions
+* Attack rate
+* Traffic source
+
+### Model behaviour
+
+* Average attack probability
+* Maximum attack probability
+* Recent predictions
+* Probability changes
+
+### Drift
+
+* Drift status
+* Drifted features
+* PSI values
+* Recent distribution changes
+
+### MLOps
+
+* Pipeline status
+* Retraining status
+* Promotion status
+* Audit information
+
+Start the dashboard using:
+
+```bash
+streamlit run dashboard.py
 ```
-
-### Temporal behaviour
-
-```text
-Attack probability over time
-Attack-rate changes
-Recent predictions
-```
-
-### Drift information
-
-```text
-Current drift status
-Drifted features
-PSI values
-```
-
-### Pipeline information
-
-```text
-Pipeline status
-Retraining status
-Promotion status
-Audit information
-```
-
-The dashboard's purpose is not to replace the NIDS itself.
-
-It provides **observability** into what the NIDS is doing.
 
 ---
 
-# 25. 🗂️ Repository Structure
+# 🧪 Controlled Attack Demonstration
 
-The project is organized around separate concerns:
+The project can demonstrate attack detection using **existing labelled CICIDS2017 attack samples**.
+
+It does not require generating a real attack.
+
+The demonstration flow is:
+
+```text
+Known CICIDS2017 Sample
+        ↓
+Feature Representation
+        ↓
+Trained Model
+        ↓
+Prediction
+        ↓
+Dashboard / Logs
+```
+
+This provides a safer way to demonstrate the detection pipeline in an academic environment.
+
+---
+
+# 🛠️ Technology Stack
+
+| Component           | Technology     |
+| ------------------- | -------------- |
+| Language            | Python         |
+| Machine Learning    | Scikit-learn   |
+| Model               | Random Forest  |
+| Data Processing     | Pandas / NumPy |
+| Dataset             | CICIDS2017     |
+| Dataset Storage     | Apache Parquet |
+| Parquet Engine      | PyArrow        |
+| Statistics          | SciPy          |
+| Packet Capture      | Scapy          |
+| Model Serialization | Joblib         |
+| Dashboard           | Streamlit      |
+| Version Control     | Git / GitHub   |
+
+---
+
+# 📁 Project Structure
 
 ```text
 nids-drift-mlops/
 │
 ├── data/
 │   ├── raw/
-│   │   └── CICIDS2017 Parquet files
-│   │
 │   └── processed/
-│       └── cicids2017_processed.parquet
 │
 ├── models/
 │   └── nids_random_forest.joblib
@@ -1200,7 +723,6 @@ nids-drift-mlops/
 │   └── pipeline_log.json
 │
 ├── src/
-│   │
 │   ├── data/
 │   │   ├── loader.py
 │   │   └── preprocessor.py
@@ -1211,10 +733,7 @@ nids-drift-mlops/
 │   ├── live/
 │   │   ├── flow_builder.py
 │   │   ├── predictor.py
-│   │   ├── nids.py
-│   │   ├── capture.py
-│   │   ├── flow_capture.py
-│   │   └── interfaces.py
+│   │   └── nids.py
 │   │
 │   ├── drift/
 │   │   ├── detector.py
@@ -1224,89 +743,29 @@ nids-drift-mlops/
 │   │   └── run.py
 │   │
 │   └── dashboard/
-│       └── app.py
 │
 ├── dashboard.py
 ├── requirements.txt
-├── README.md
-└── .gitignore
-```
-
-Some modules represent earlier experiments or evolving parts of the project, so the active execution path should be treated as:
-
-```text
-preprocessor
-      ↓
-train
-      ↓
-live nids
-      ↓
-prediction log
-      ↓
-drift detector / monitor
-      ↓
-pipeline orchestration
+└── README.md
 ```
 
 ---
 
-# 26. 🧰 Technology Stack
+# ⚙️ Installation & Usage
 
-| Layer               | Technology            |
-| ------------------- | --------------------- |
-| Language            | Python                |
-| Data Processing     | Pandas                |
-| Numerical Computing | NumPy                 |
-| Machine Learning    | Scikit-learn          |
-| Model               | Random Forest         |
-| Statistics          | SciPy                 |
-| Dataset Storage     | Apache Parquet        |
-| Parquet Engine      | PyArrow               |
-| Packet Capture      | Scapy                 |
-| Model Serialization | Joblib                |
-| Dashboard           | Streamlit             |
-| Dashboard Refresh   | streamlit-autorefresh |
-| Version Control     | Git / GitHub          |
-
-Current pinned dependencies are maintained in `requirements.txt`.
-
----
-
-# 27. ⚙️ Installation
-
-## Prerequisites
-
-Recommended:
-
-```text
-Python 3.x
-pip
-Git
-```
-
-For live packet capture you also need appropriate packet-capture permissions/drivers for your operating system.
-
-On Windows, Scapy commonly requires an Npcap installation.
-
----
-
-## Clone the Repository
+## 1. Clone Repository
 
 ```bash
 git clone https://github.com/Akhil6161/nids-drift-mlops.git
-
 cd nids-drift-mlops
 ```
 
----
-
-## Create a Virtual Environment
+## 2. Create Virtual Environment
 
 ### macOS / Linux
 
 ```bash
 python3 -m venv .venv
-
 source .venv/bin/activate
 ```
 
@@ -1314,914 +773,130 @@ source .venv/bin/activate
 
 ```powershell
 python -m venv .venv
-
 .venv\Scripts\activate
 ```
 
----
-
-## Install Dependencies
+## 3. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
+## 4. Add Dataset
 
-# 28. 📁 Dataset Setup
-
-Place the expected Parquet files inside:
+Place the required CICIDS2017 Parquet files inside:
 
 ```text
 data/raw/
 ```
 
-The expected structure is:
-
-```text
-data/
-└── raw/
-    ├── Benign-Monday-no-metadata.parquet
-    ├── Bruteforce-Tuesday-no-metadata.parquet
-    ├── DoS-Wednesday-no-metadata.parquet
-    ├── Infiltration-Thursday-no-metadata.parquet
-    ├── WebAttacks-Thursday-no-metadata.parquet
-    ├── DDoS-Friday-no-metadata.parquet
-    ├── Portscan-Friday-no-metadata.parquet
-    └── Botnet-Friday-no-metadata.parquet
-```
-
-Do not commit the full dataset to Git.
-
----
-
-# 29. 🧹 Step 1 — Preprocess the Dataset
-
-Run:
+## 5. Preprocess
 
 ```bash
 python -m src.data.preprocessor
 ```
 
-This produces:
-
-```text
-data/processed/cicids2017_processed.parquet
-```
-
-The preprocessing stage:
-
-```text
-Raw Parquet
-     ↓
-Column cleaning
-     ↓
-Inf handling
-     ↓
-Missing-value removal
-     ↓
-Duplicate removal
-     ↓
-Binary target creation
-     ↓
-Processed Parquet
-```
-
----
-
-# 30. 🤖 Step 2 — Train the Model
-
-Run:
+## 6. Train Model
 
 ```bash
 python -m src.models.train
 ```
 
-The training process:
+## 7. Start Live NIDS
 
-```text
-Processed dataset
-       ↓
-Feature / target separation
-       ↓
-Numerical feature selection
-       ↓
-Train-test split
-       ↓
-Random Forest training
-       ↓
-Evaluation
-       ↓
-Joblib serialization
-```
-
-Output:
-
-```text
-models/nids_random_forest.joblib
-```
-
----
-
-# 31. 🌐 Step 3 — Identify Network Interfaces
-
-Use the interface utility:
-
-```bash
-python -m src.live.interfaces
-```
-
-Find the interface through which you want to observe traffic.
-
-The current live NIDS configuration contains a machine-specific interface value, so it must be updated for the environment where the project is executed.
-
-This is currently one of the portability limitations of the project.
-
----
-
-# 32. 🚦 Step 4 — Start Live NIDS
-
-After configuring the interface:
+Configure the appropriate network interface and run:
 
 ```bash
 python -m src.live.nids
 ```
 
-The system will:
-
-```text
-Capture packets
-      ↓
-Build flows
-      ↓
-Accumulate packets
-      ↓
-Generate features
-      ↓
-Run prediction
-      ↓
-Calculate attack probability
-      ↓
-Write prediction log
-```
-
-Stop capture using:
-
-```text
-Ctrl + C
-```
-
-Predictions are written to:
-
-```text
-logs/nids_predictions.csv
-```
-
----
-
-# 33. 📉 Step 5 — Run Drift Detection
-
-Once enough predictions have been collected:
+## 8. Run Drift Detection
 
 ```bash
 python -m src.drift.detector
 ```
 
-The detector requires:
-
-```text
-1000 reference predictions
-+
-100 current predictions
-```
-
-It then evaluates:
-
-```text
-packets
-bytes
-attack_probability
-```
-
-and writes:
-
-```text
-logs/drift_detection.csv
-```
-
----
-
-# 34. 🔄 Step 6 — Continuous Drift Monitoring
-
-Run:
-
-```bash
-python -m src.drift.monitor
-```
-
-The monitor periodically checks whether new predictions have arrived.
-
-Current polling interval:
-
-```text
-30 seconds
-```
-
-The monitor then reruns drift detection when new data is available.
-
----
-
-# 35. 🧠 Step 7 — Run the MLOps Pipeline
-
-The orchestration layer can be started with:
-
-```bash
-python -m src.pipeline.run
-```
-
-The intended execution flow is:
-
-```text
-Prediction Log Check
-        ↓
-Drift Detection
-        ↓
-Drift Analysis
-        ↓
-Significant Drift?
-        │
-   ┌────┴────┐
-   │         │
-  NO        YES
-   │         │
-   ↓         ↓
-Keep      Retrain
-Model     Candidate
-             ↓
-          Evaluate
-             ↓
-        Promotion Gate
-             ↓
-      Promote / Reject
-             ↓
-        Audit Logging
-```
-
-The pipeline implementation explicitly follows this state machine.
-
----
-
-# 36. 📊 Step 8 — Start Dashboard
-
-Launch Streamlit:
+## 9. Start Dashboard
 
 ```bash
 streamlit run dashboard.py
 ```
 
-The dashboard can then be used to inspect:
+---
+
+# ⚠️ Current Limitations
+
+This project is a **student/research prototype**, not a production enterprise IDS.
+
+Current limitations include:
+
+* PSI is currently the active drift detector; KS testing is not yet part of the implementation.
+* Live feature extraction still needs complete parity with every offline CICIDS2017 feature.
+* Prediction storage currently uses CSV.
+* Network-interface configuration needs better environment-based configuration.
+* Candidate retraining and promotion components are still being integrated/hardened.
+* No production model registry is currently used.
+* No complete CI/CD deployment pipeline is included yet.
+* Drift detection alone does not establish actual model-performance degradation.
+
+These are planned areas for further development.
+
+---
+
+# 🔮 Future Improvements
 
 ```text
-Prediction activity
-Attack probability
-Attack rate
-Recent predictions
-Drift status
-Pipeline information
-```
-
----
-
-# 37. 🧪 Safe Demonstration Strategy
-
-The project should distinguish between:
-
-### Live monitoring
-
-Real packets captured from the configured network interface.
-
-and:
-
-### Controlled demonstration
-
-Previously collected CICIDS2017 samples used to demonstrate the ML detection and monitoring workflow.
-
-The controlled demonstration should **not generate an actual attack**.
-
-It simply replays known labelled traffic data through the model.
-
-This makes the project suitable for:
-
-* classroom demonstrations
-* project evaluations
-* dashboards
-* testing
-* presentations
-
-without intentionally attacking another system.
-
----
-
-# 38. 🔐 Security Considerations
-
-This project operates at the packet-capture layer.
-
-Running packet capture may require elevated privileges depending on the operating system and capture driver.
-
-Be careful when deploying it on networks that you do not own or have permission to monitor.
-
-The system should be used only on:
-
-```text
-Your own network
-Laboratory environments
-Authorized test environments
-```
-
-The project is intended for defensive security research and education.
-
----
-
-# 39. ⚠️ Important Current Limitations
-
-This section is deliberately explicit.
-
-### 1. Drift monitoring is currently PSI-based
-
-The architecture originally considered PSI + KS, but the current detector implementation calculates PSI.
-
-Therefore the current system should be described as:
-
-> **PSI-based distribution-shift monitoring**
-
-rather than claiming that both PSI and KS are currently active.
-
----
-
-### 2. Drift does not prove model degradation
-
-A high PSI indicates that a monitored distribution changed.
-
-It does not prove:
-
-```text
-model accuracy ↓
-```
-
-without ground-truth evaluation.
-
-A stronger future design would connect drift events with delayed labels or validated attack/benign outcomes.
-
----
-
-### 3. Live feature parity is incomplete
-
-The live flow builder contains eight active/idle timing features that are currently set to zero.
-
-Therefore:
-
-```text
-Offline feature representation
-        ≠
-Perfectly equivalent live feature representation
-```
-
-This can affect live prediction quality.
-
-The exact CICIDS2017 feature calculation should eventually be reproduced for these fields.
-
----
-
-### 4. Network interface configuration is hardcoded
-
-The live capture interface is currently configured directly inside the source code.
-
-This is not portable.
-
-A better implementation would support:
-
-```bash
-python -m src.live.nids --interface <interface>
-```
-
-or:
-
-```text
-.env
-config.yaml
-environment variable
-```
-
----
-
-### 5. CSV is not a production-scale event store
-
-CSV is useful for:
-
-* prototyping
-* debugging
-* demonstrations
-* local analysis
-
-but is not ideal for:
-
-* high-throughput production traffic
-* concurrent writes
-* large historical datasets
-* distributed monitoring
-
-A production version could use:
-
-```text
-Kafka
-PostgreSQL
-ClickHouse
-MongoDB
-Object Storage
-```
-
-depending on the architecture.
-
----
-
-### 6. Candidate retraining and promotion need to be fully integrated
-
-The pipeline orchestrator contains calls for:
-
-```text
-src.models.retrain
-src.models.promote
-```
-
-but those components need to exist and be validated as part of the runnable repository before the project should claim completely autonomous model replacement.
-
----
-
-### 7. No production-grade model registry yet
-
-The current system uses Joblib artifacts.
-
-A stronger MLOps implementation could introduce:
-
-```text
+Current System
+      ↓
+Complete Feature Parity
+      ↓
+PSI + KS Drift Detection
+      ↓
+Ground-Truth Performance Monitoring
+      ↓
 MLflow Model Registry
+      ↓
+FastAPI Model Serving
+      ↓
+Docker Deployment
+      ↓
+CI/CD with GitHub Actions
+      ↓
+AWS Deployment
+      ↓
+Automated Rollback
 ```
 
-or another model registry to track:
+Other possible improvements include:
 
-```text
-Model version
-Training dataset
-Metrics
-Drift trigger
-Promotion decision
-Deployment timestamp
-Rollback version
-```
+* Kafka-based traffic/event streaming
+* PostgreSQL or ClickHouse for prediction storage
+* Prometheus/Grafana monitoring
+* Model versioning
+* Model rollback
+* Automated testing
+* Alerting
+* Kubernetes deployment
 
 ---
 
-### 8. No complete CI/CD pipeline yet
+# 🎓 What This Project Demonstrates
 
-A mature version should include:
-
-```text
-Git Push
-   ↓
-Automated Tests
-   ↓
-Linting
-   ↓
-Model/Data Validation
-   ↓
-Build
-   ↓
-Deployment
-```
-
----
-
-# 40. 🛠️ Recommended Future Architecture
-
-The project can evolve from a student prototype into a more production-oriented architecture:
-
-```text
-                         NETWORK
-                           │
-                           ▼
-                    Packet Capture
-                           │
-                           ▼
-                   Flow Construction
-                           │
-                           ▼
-                  Feature Extraction
-                           │
-                           ▼
-                    Model Serving
-                           │
-                           ▼
-                     Predictions
-                           │
-                 ┌─────────┴─────────┐
-                 │                   │
-                 ▼                   ▼
-            Event Store          Dashboard
-                 │
-                 ▼
-           Drift Monitor
-                 │
-                 ▼
-          Drift Alert/Event
-                 │
-                 ▼
-          Candidate Training
-                 │
-                 ▼
-          Offline Evaluation
-                 │
-                 ▼
-            Model Registry
-                 │
-                 ▼
-           Promotion Gate
-             /       \
-            /         \
-        Approved     Rejected
-           │             │
-           ▼             ▼
-     Production       Existing
-        Model           Model
-           │
-           ▼
-       Monitoring
-           │
-           └───────────────┐
-                           │
-                           ▼
-                      Next Cycle
-```
-
-Potential technologies:
-
-| Requirement      | Possible Technology         |
-| ---------------- | --------------------------- |
-| Streaming        | Kafka                       |
-| Storage          | PostgreSQL / ClickHouse     |
-| Model Registry   | MLflow                      |
-| Drift Monitoring | Evidently / custom PSI + KS |
-| API              | FastAPI                     |
-| Containers       | Docker                      |
-| Orchestration    | Kubernetes                  |
-| CI/CD            | GitHub Actions              |
-| Cloud            | AWS                         |
-| Metrics          | Prometheus                  |
-| Dashboards       | Grafana / Streamlit         |
-
-These are **future architecture options**, not technologies currently implemented in the repository.
-
----
-
-# 41. 🧩 Why This Project Is an MLOps Project
-
-The important part of this project is not simply:
-
-```text
-Random Forest + CICIDS2017
-```
-
-That alone is a conventional ML classification project.
-
-The MLOps component comes from the lifecycle:
-
-```text
-Train
-  ↓
-Deploy
-  ↓
-Predict
-  ↓
-Log
-  ↓
-Monitor
-  ↓
-Detect distribution shift
-  ↓
-Trigger retraining
-  ↓
-Evaluate candidate
-  ↓
-Promotion decision
-  ↓
-Deploy new version
-  ↓
-Monitor again
-```
-
-This introduces the idea of a **closed ML lifecycle**.
-
-The model becomes one component inside a larger operational system.
-
----
-
-# 42. 🔬 Research Motivation
-
-The project is inspired by research into label-independent concept-drift detection for network intrusion detection, particularly work exploring how changes in network behaviour can be detected without continuously requiring ground-truth labels.
-
-The project adapts that general idea to a smaller, practical student-scale architecture:
-
-```text
-Reference Traffic
-       ↓
-Current Traffic
-       ↓
-Statistical Comparison
-       ↓
-Drift Signal
-       ↓
-Potential Model Update
-```
-
-The implementation intentionally separates:
-
-```text
-Detection
-```
-
-from:
-
-```text
-Model Lifecycle
-```
-
-so that a drift signal does not automatically imply blind model replacement.
-
----
-
-# 43. 📈 What the Dashboard Should Answer
-
-A useful monitoring dashboard should answer operational questions quickly.
-
-### Question 1
-
-> How much traffic has been processed?
-
-```text
-Total Predictions
-```
-
-### Question 2
-
-> How much traffic is being classified as malicious?
-
-```text
-Attack Count
-Attack Rate
-```
-
-### Question 3
-
-> How confident is the model?
-
-```text
-Attack Probability
-```
-
-### Question 4
-
-> Is current traffic behaving differently?
-
-```text
-PSI
-Drift Status
-```
-
-### Question 5
-
-> What changed?
-
-```text
-Affected Variables
-```
-
-### Question 6
-
-> Did the MLOps system react?
-
-```text
-Retraining Status
-Promotion Status
-Pipeline Status
-```
-
-This turns the dashboard from a simple visualization into an **operational observability layer**.
-
----
-
-# 44. 🧭 Design Principles
-
-The project follows several important design principles.
-
-### Principle 1 — Separate inference from monitoring
-
-```text
-Prediction ≠ Monitoring
-```
-
-The model should make predictions while a separate component observes behaviour.
-
----
-
-### Principle 2 — Drift should trigger investigation, not blind deployment
-
-```text
-Drift
- ↓
-Candidate Model
- ↓
-Evaluation
- ↓
-Promotion Decision
-```
-
-not:
-
-```text
-Drift
- ↓
-Overwrite Production
-```
-
----
-
-### Principle 3 — Preserve the production model
-
-The production model should remain available until a candidate passes evaluation.
-
----
-
-### Principle 4 — Log everything important
-
-Without logs, it is difficult to answer:
-
-```text
-What happened?
-When?
-Why?
-Which model?
-What data?
-What triggered retraining?
-Why was a model promoted?
-```
-
----
-
-### Principle 5 — Reproduce the training feature schema
-
-If the model is trained on:
-
-```text
-77 features
-```
-
-the live inference pipeline must reproduce those features with compatible definitions.
-
-Feature mismatch is one of the biggest risks in deploying offline-trained network models to live traffic.
-
----
-
-# 45. 🧪 Example Lifecycle
-
-Imagine the system begins with:
-
-```text
-1000 reference predictions
-```
-
-and the traffic initially resembles the training environment.
-
-The detector reports:
-
-```text
-NO_DRIFT
-```
-
-The production model remains active.
-
-Later, the newest traffic window contains a different distribution:
-
-```text
-Packets       ↑
-Bytes         ↑
-Attack prob.  ↑
-```
-
-PSI increases.
-
-The detector reports:
-
-```text
-SIGNIFICANT_DRIFT
-```
-
-The MLOps pipeline can then initiate:
-
-```text
-Candidate Training
-        ↓
-Candidate Evaluation
-        ↓
-Promotion Gate
-```
-
-If the candidate passes:
-
-```text
-Candidate → Production
-```
-
-If it fails:
-
-```text
-Candidate → Rejected
-Production → Unchanged
-```
-
-This is the central lifecycle the project is designed to demonstrate.
-
----
-
-# 46. 🗺️ Development Roadmap
-
-## Phase 1 — Completed/Core
-
-* [x] CICIDS2017 loading
-* [x] Data cleaning
-* [x] Binary target generation
-* [x] Random Forest training
-* [x] Model serialization
-* [x] Scapy packet capture
-* [x] Bidirectional flow reconstruction
-* [x] Live feature extraction
-* [x] Real-time prediction
-* [x] Prediction logging
-* [x] PSI drift detection
-* [x] Basic continuous monitoring
-* [x] Streamlit monitoring
-
-## Phase 2 — MLOps Hardening
-
-* [ ] Fully integrate candidate retraining
-* [ ] Fully integrate candidate evaluation
-* [ ] Fully integrate promotion gate
-* [ ] Model versioning
-* [ ] Rollback support
-* [ ] Better pipeline state management
-* [ ] Reproducible configuration
-* [ ] Automated tests
-
-## Phase 3 — Production Architecture
-
-* [ ] Replace CSV with persistent event storage
-* [ ] Add model registry
-* [ ] Add FastAPI inference service
-* [ ] Containerize services
-* [ ] Add CI/CD
-* [ ] Add metrics and alerting
-* [ ] Cloud deployment
-* [ ] Scalable packet ingestion
-
-## Phase 4 — Advanced Drift Monitoring
-
-* [ ] Add KS testing
-* [ ] Compare multiple drift signals
-* [ ] Add ground-truth based performance monitoring
-* [ ] Detect prediction drift separately from feature drift
-* [ ] Add delayed-label evaluation
-* [ ] Add drift history
-* [ ] Add automated rollback
-
----
-
-# 47. 📚 Key Learning Outcomes
-
-This project demonstrates practical experience with:
+This project brings together several areas of computer science and engineering:
 
 ### Machine Learning
 
-* Binary classification
+* Classification
 * Random Forest
+* Feature engineering
 * Class imbalance
-* Train/test splitting
 * Model evaluation
-* Model serialization
 
-### Network Security
+### Cybersecurity
 
-* Network packet capture
-* TCP/UDP traffic
-* Bidirectional flows
-* Network-flow features
+* Network traffic analysis
+* Packet capture
+* Flow reconstruction
 * Intrusion detection
 
 ### Statistics
@@ -2229,111 +904,39 @@ This project demonstrates practical experience with:
 * Distribution comparison
 * Population Stability Index
 * Drift thresholds
-* Reference/current windows
 
 ### MLOps
 
-* Prediction logging
-* Model monitoring
+* Prediction monitoring
 * Drift detection
 * Candidate retraining
-* Model promotion
-* Audit logging
-* Model lifecycle management
+* Model evaluation
+* Promotion gates
+* Pipeline auditing
 
 ### Software Engineering
 
-* Modular Python architecture
-* CLI execution
-* Pipeline orchestration
-* File-based persistence
+* Modular architecture
+* Python packages
+* CLI workflows
+* Logging
 * Dashboard development
-* Git/GitHub workflow
+* Git/GitHub
 
 ---
 
-# 48. 👥 Team
+# 👥 Team
 
-This project was developed as a team minor project by:
+Developed as a team minor project by:
 
-* **Akhil6161**
-* **realadityagupta**
-
-The repository is maintained as a collaborative academic project.
+**Akhil6161 · realadityagupta**
 
 ---
 
-# 49. 📄 Project Scope
+# 📌 Project Summary
 
-This project is intended as:
+> **NIDS Drift MLOps is a real-time network intrusion detection system that combines CICIDS2017-trained Random Forest classification with Scapy-based live traffic monitoring, flow-level feature extraction, prediction logging, PSI-based drift detection, and an MLOps workflow for controlled candidate retraining and model promotion.**
 
-```text
-Academic research
-+
-MLOps demonstration
-+
-Network-security experimentation
-+
-Real-time ML monitoring
-```
+### Repository
 
-It is **not intended to be presented as a production enterprise IDS** without additional work around:
-
-* feature parity
-* scalable storage
-* model registry
-* security hardening
-* deployment
-* testing
-* rollback
-* observability
-* ground-truth performance monitoring
-
-Being explicit about these boundaries makes the project technically more credible.
-
----
-
-# 50. ⭐ Why This Project Matters
-
-The core idea is simple:
-
-> **Machine-learning deployment does not end when a model is trained.**
-
-For a network intrusion detection system:
-
-```text
-The network changes.
-       ↓
-The data changes.
-       ↓
-The model's assumptions may change.
-       ↓
-The system must detect that change.
-       ↓
-A candidate model can be trained.
-       ↓
-The candidate must be evaluated.
-       ↓
-Only then should production change.
-```
-
-That is the central engineering problem this project explores.
-
----
-
-## 🔗 Repository
-
-**GitHub:**
-https://github.com/Akhil6161/nids-drift-mlops
-
----
-
-## 📌 One-Line Summary
-
-> **A flow-based real-time Network Intrusion Detection System that combines CICIDS2017-trained Random Forest inference with live packet capture, prediction logging, PSI-based drift monitoring, and an MLOps architecture for candidate retraining and controlled model promotion.**
-
----
-
-## ⚠️ Current Technical Disclaimer
-
-The project is a student/research prototype. Live packet capture, feature extraction, drift detection and model lifecycle components are under active development. Statistical drift should not be interpreted as proof of model-performance degradation without ground-truth evaluation.
+[GitHub — NIDS Drift MLOps](https://github.com/Akhil6161/nids-drift-mlops)
