@@ -8,7 +8,7 @@ from src.drift.detector import (
     PREDICTION_FILE,
     DRIFT_LOG_FILE,
     REFERENCE_SIZE,
-    MIN_CURRENT_SIZE,
+    CURRENT_SIZE,
     detect_drift,
     save_results,
 )
@@ -36,9 +36,7 @@ def display_results(results):
 
     print(
         "Time:",
-        datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        ),
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )
 
     print()
@@ -56,20 +54,16 @@ def display_results(results):
     print()
 
     significant = results[
-        results["drift_status"]
-        == "SIGNIFICANT_DRIFT"
+        results["drift_status"] == "SIGNIFICANT_DRIFT"
     ]
 
     moderate = results[
-        results["drift_status"]
-        == "MODERATE_DRIFT"
+        results["drift_status"] == "MODERATE_DRIFT"
     ]
 
     if len(significant) > 0:
 
-        print(
-            "ALERT: SIGNIFICANT DRIFT DETECTED"
-        )
+        print("ALERT: SIGNIFICANT DRIFT DETECTED")
 
         print(
             "Affected features:",
@@ -80,15 +74,18 @@ def display_results(results):
 
     elif len(moderate) > 0:
 
+        print("WARNING: MODERATE DRIFT DETECTED")
+
         print(
-            "WARNING: MODERATE DRIFT DETECTED"
+            "Affected features:",
+            ", ".join(
+                moderate["feature"].tolist()
+            ),
         )
 
     else:
 
-        print(
-            "STATUS: NO SIGNIFICANT DRIFT"
-        )
+        print("STATUS: NO SIGNIFICANT DRIFT")
 
     print("=" * 60)
 
@@ -99,9 +96,7 @@ def display_results(results):
 
 def run_drift_check():
 
-    if not os.path.exists(
-        PREDICTION_FILE
-    ):
+    if not os.path.exists(PREDICTION_FILE):
 
         print(
             "[Monitor] Prediction file not found."
@@ -133,8 +128,7 @@ def run_drift_check():
     )
 
     required_samples = (
-        REFERENCE_SIZE
-        + MIN_CURRENT_SIZE
+        REFERENCE_SIZE + CURRENT_SIZE
     )
 
     if total_predictions < required_samples:
@@ -196,6 +190,16 @@ def main():
     )
 
     print(
+        "Reference samples:",
+        REFERENCE_SIZE,
+    )
+
+    print(
+        "Current monitoring samples:",
+        CURRENT_SIZE,
+    )
+
+    print(
         "Check interval:",
         CHECK_INTERVAL_SECONDS,
         "seconds",
@@ -217,9 +221,7 @@ def main():
 
         while True:
 
-            if os.path.exists(
-                PREDICTION_FILE
-            ):
+            if os.path.exists(PREDICTION_FILE):
 
                 try:
 

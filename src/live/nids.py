@@ -19,6 +19,11 @@ PREDICT_EVERY_PACKETS = 5
 
 LOG_FILE = "logs/nids_predictions.csv"
 
+# IMPORTANT:
+# This module processes actual packets captured from the
+# configured network interface.
+TRAFFIC_SOURCE = "LIVE"
+
 
 # ============================================================
 # GLOBAL STATE
@@ -60,6 +65,7 @@ def log_prediction(flow, result):
         writer = csv.writer(file)
 
         if not file_exists:
+
             writer.writerow([
                 "timestamp",
                 "src_ip",
@@ -72,6 +78,7 @@ def log_prediction(flow, result):
                 "prediction",
                 "label",
                 "attack_probability",
+                "source",
             ])
 
         writer.writerow([
@@ -88,6 +95,7 @@ def log_prediction(flow, result):
             result["prediction"],
             result["label"],
             result["attack_probability"],
+            TRAFFIC_SOURCE,
         ])
 
 
@@ -113,6 +121,7 @@ def get_ip_layer(packet):
 def get_transport_info(packet):
 
     if TCP in packet:
+
         return (
             int(packet[TCP].sport),
             int(packet[TCP].dport),
@@ -120,6 +129,7 @@ def get_transport_info(packet):
         )
 
     if UDP in packet:
+
         return (
             int(packet[UDP].sport),
             int(packet[UDP].dport),
@@ -152,6 +162,7 @@ def get_tcp_window(packet):
 
     try:
         return int(packet[TCP].window)
+
     except Exception:
         return 0
 
@@ -165,14 +176,17 @@ def get_header_length(packet):
     if TCP in packet:
 
         if IP in packet:
+
             ip_header_length = int(
                 packet[IP].ihl or 5
             ) * 4
 
         elif IPv6 in packet:
+
             ip_header_length = 40
 
         else:
+
             ip_header_length = 0
 
         tcp_header_length = int(
@@ -187,14 +201,17 @@ def get_header_length(packet):
     if UDP in packet:
 
         if IP in packet:
+
             ip_header_length = int(
                 packet[IP].ihl or 5
             ) * 4
 
         elif IPv6 in packet:
+
             ip_header_length = 40
 
         else:
+
             ip_header_length = 0
 
         return (
@@ -228,8 +245,11 @@ def predict_flow(flow):
     total_predictions += 1
 
     if result["label"] == "BENIGN":
+
         benign_predictions += 1
+
     else:
+
         attack_predictions += 1
 
     probability = float(
@@ -237,14 +257,18 @@ def predict_flow(flow):
     )
 
     if probability > highest_attack_probability:
+
         highest_attack_probability = probability
 
     print()
     print("=" * 60)
 
     if result["label"] == "BENIGN":
+
         print("NIDS RESULT - BENIGN")
+
     else:
+
         print("NIDS RESULT - ATTACK")
 
     print("=" * 60)
@@ -282,6 +306,10 @@ def predict_flow(flow):
     print(
         f"Attack probability: "
         f"{probability:.2%}"
+    )
+
+    print(
+        f"Traffic source: {TRAFFIC_SOURCE}"
     )
 
     print("=" * 60)
@@ -400,7 +428,7 @@ def print_summary():
     print("=" * 60)
 
     print(
-        f"Flows observed       : {len(flows)}"
+        f"Flows observed        : {len(flows)}"
     )
 
     print(
@@ -421,6 +449,10 @@ def print_summary():
     )
 
     print()
+
+    print(
+        f"Traffic source        : {TRAFFIC_SOURCE}"
+    )
 
     if os.path.exists(LOG_FILE):
 
@@ -446,6 +478,11 @@ def main():
     print("=" * 60)
     print("NIDS - LIVE NETWORK INTRUSION DETECTION")
     print("=" * 60)
+
+    print()
+
+    print("Traffic source:")
+    print(TRAFFIC_SOURCE)
 
     print()
 
